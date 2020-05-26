@@ -6,7 +6,7 @@
        },
        "wifi-ssid": {
              "help": "WiFi SSID",
-             "value": "\"vivo\""
+             "value": "\"vivo19\""
        },
        "wifi-password": {
              "help": "WiFi Password",

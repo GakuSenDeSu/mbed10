@@ -26,14 +26,21 @@
 #define FXOS8700Q_M_CTRL_REG2 0x5C
 #define FXOS8700Q_WHOAMI_VAL 0xC7
 I2C i2c( PTD9,PTD8);
+Serial pc(USBTX, USBRX);
 int m_addr = FXOS8700CQ_SLAVE_ADDR1;
 uint8_t who_am_i, dataF[2], res[6];
 int16_t acc16;
 float t[3];
 
-void FXOS8700CQ_readRegs(int addr, uint8_t * dataF, int len);
-void FXOS8700CQ_writeRegs(uint8_t * dataF, int len);
+void FXOS8700CQ_readRegs(int addr, uint8_t * dataF, int len) {
+   char t = addr;
+   i2c.write(m_addr, &t, 1, true);
+   i2c.read(m_addr, (char *)dataF, len);
+}
 
+void FXOS8700CQ_writeRegs(uint8_t * dataF, int len) {
+   i2c.write(m_addr, (char *)dataF, len);
+}
 
 // GLOBAL VARIABLES
 WiFiInterface *wifi;
@@ -63,9 +70,24 @@ void messageArrived(MQTT::MessageData& md) {
 void publish_message(MQTT::Client<MQTTNetwork, Countdown>* client) {
       message_num++;
       MQTT::Message message;
-      
+      FXOS8700CQ_readRegs(FXOS8700Q_OUT_X_MSB, res, 6);
+
+      acc16 = (res[0] << 6) | (res[1] >> 2);
+      if (acc16 > UINT14_MAX/2)
+         acc16 -= UINT14_MAX;
+      t[0] = ((float)acc16) / 4096.0f;
+
+      acc16 = (res[2] << 6) | (res[3] >> 2);
+      if (acc16 > UINT14_MAX/2)
+         acc16 -= UINT14_MAX;
+      t[1] = ((float)acc16) / 4096.0f;
+
+      acc16 = (res[4] << 6) | (res[5] >> 2);
+      if (acc16 > UINT14_MAX/2)
+         acc16 -= UINT14_MAX;
+      t[2] = ((float)acc16) / 4096.0f;
       char buff[100];
-      sprintf(buff, "QoS0 Hello, Python! #%d", message_num);
+      sprintf(buff, "FXOS8700Q ACC: X=#%1.4f Y=#%1.4f Z=#%1.4f", t[0], t[1], t[2], res[4], res[5]);
       message.qos = MQTT::QOS0;
       message.retained = false;
       message.dup = false;
@@ -83,7 +105,7 @@ void close_mqtt() {
 
 int main() {
 
-
+pc.baud(115200);
    // Enable the FXOS8700Q
 
    FXOS8700CQ_readRegs( FXOS8700Q_CTRL_REG1, &dataF[1], 1);
@@ -93,6 +115,8 @@ int main() {
 
    // Get the slave address
    FXOS8700CQ_readRegs(FXOS8700Q_WHOAMI, &who_am_i, 1);
+
+   pc.printf("Here is %x\r\n", who_am_i);
 
       wifi = WiFiInterface::get_default_instance();
       if (!wifi) {
@@ -135,7 +159,8 @@ int main() {
       }
 
       mqtt_thread.start(callback(&mqtt_queue, &EventQueue::dispatch_forever));
-      btn2.rise(mqtt_queue.event(&publish_message, &client));
+      Ticker mqttTicker;
+      mqttTicker.attach(mqtt_queue.event(&publish_message, &client), 0.5f);
       btn3.rise(&close_mqtt);
 
       int num = 0;
@@ -162,14 +187,4 @@ int main() {
       printf("Successfully closed!\n");
 
       return 0;
-}
-
-void FXOS8700CQ_readRegs(int addr, uint8_t * dataF, int len) {
-   char t = addr;
-   i2c.write(m_addr, &t, 1, true);
-   i2c.read(m_addr, (char *)dataF, len);
-}
-
-void FXOS8700CQ_writeRegs(uint8_t * dataF, int len) {
-   i2c.write(m_addr, (char *)dataF, len);
 }
